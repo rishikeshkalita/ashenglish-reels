@@ -1,0 +1,5 @@
+streamlit>=1.44.0
+openai-whisper>=20250625
+indic-transliteration>=2.3.58
+pandas>=2.2.3
+torch>=2.6.0
