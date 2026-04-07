@@ -1,3 +1,15 @@
+---
+title: Ashenglish Reels
+emoji: 🎬
+colorFrom: yellow
+colorTo: gray
+sdk: docker
+app_port: 8501
+pinned: false
+license: mit
+short_description: Assamese-to-Ashenglish reels subtitling with review and burn-in export
+---
+
 # Ashenglish Reels Generator
 
 Streamlit app for Assamese reels subtitling with a strict Assamese-first pipeline:
