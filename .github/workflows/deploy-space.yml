@@ -33,26 +33,25 @@ jobs:
           fi
 
           python3 - <<'PY'
-import os
-import sys
-from huggingface_hub import HfApi
+          import os
+          from huggingface_hub import HfApi
 
-try:
-    token = os.environ['HF_TOKEN']
-    repo_id = os.environ['HF_SPACE']
-    api = HfApi(token=token)
-    who = api.whoami()
-    print(f"Authenticated to Hugging Face as: {who.get('name') or who.get('fullname') or who}")
+          try:
+              token = os.environ['HF_TOKEN']
+              repo_id = os.environ['HF_SPACE']
+              api = HfApi(token=token)
+              who = api.whoami()
+              print(f"Authenticated to Hugging Face as: {who.get('name') or who.get('fullname') or who}")
 
-    api.upload_file(
-        path_or_fileobj='README.md',
-        path_in_repo='README.md',
-        repo_id=repo_id,
-        repo_type='space',
-        commit_message='Sync README metadata from GitHub Actions',
-    )
-    print(f"README synced to https://huggingface.co/spaces/{repo_id}")
-except Exception as exc:
-    print(f"::error title=Hugging Face sync failed::{type(exc).__name__}: {exc}")
-    raise
-PY
+              api.upload_file(
+                  path_or_fileobj='README.md',
+                  path_in_repo='README.md',
+                  repo_id=repo_id,
+                  repo_type='space',
+                  commit_message='Sync README metadata from GitHub Actions',
+              )
+              print(f"README synced to https://huggingface.co/spaces/{repo_id}")
+          except Exception as exc:
+              print(f"::error title=Hugging Face sync failed::{type(exc).__name__}: {exc}")
+              raise
+          PY
