@@ -19,55 +19,40 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install Hugging Face Hub client
-        run: python -m pip install --upgrade pip huggingface_hub
+        run: python3 -m pip install --upgrade pip huggingface_hub
 
-      - name: Upload app files to Hugging Face Space
+      - name: Verify token and upload README only
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE: rishikeshkalita/ashenglish-reels
         run: |
           if [ -z "$HF_TOKEN" ]; then
-            echo "HF_TOKEN secret is not set. Add it in GitHub repo settings before running this workflow."
+            echo "::error title=Missing HF token::HF_TOKEN secret is not set in GitHub Actions secrets."
             exit 1
           fi
 
-          python - <<'PY'
-          import os
-          from huggingface_hub import HfApi
+          python3 - <<'PY'
+import os
+import sys
+from huggingface_hub import HfApi
 
-          token = os.environ['HF_TOKEN']
-          repo_id = os.environ['HF_SPACE']
-          api = HfApi(token=token)
+try:
+    token = os.environ['HF_TOKEN']
+    repo_id = os.environ['HF_SPACE']
+    api = HfApi(token=token)
+    who = api.whoami()
+    print(f"Authenticated to Hugging Face as: {who.get('name') or who.get('fullname') or who}")
 
-          files_to_upload = [
-              'README.md',
-              'app.py',
-              'requirements.txt',
-              'Dockerfile',
-              'packages.txt',
-              'runtime.txt',
-              '.dockerignore',
-              'assamese_dictionary.txt',
-              'corrections.json',
-              '.streamlit/config.toml',
-          ]
-
-          for local_path in files_to_upload:
-              path_in_repo = local_path.replace('\\', '/')
-              print(f'Uploading {local_path} -> {path_in_repo}')
-              api.upload_file(
-                  path_or_fileobj=local_path,
-                  path_in_repo=path_in_repo,
-                  repo_id=repo_id,
-                  repo_type='space',
-                  commit_message=f'Sync {path_in_repo} from GitHub Actions',
-              )
-
-          print(f'Synced repository to https://huggingface.co/spaces/{repo_id}')
-          PY
+    api.upload_file(
+        path_or_fileobj='README.md',
+        path_in_repo='README.md',
+        repo_id=repo_id,
+        repo_type='space',
+        commit_message='Sync README metadata from GitHub Actions',
+    )
+    print(f"README synced to https://huggingface.co/spaces/{repo_id}")
+except Exception as exc:
+    print(f"::error title=Hugging Face sync failed::{type(exc).__name__}: {exc}")
+    raise
+PY
