@@ -1,5 +1,8 @@
 name: Deploy to Hugging Face Space
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches:
@@ -15,8 +18,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,7 +27,7 @@ jobs:
       - name: Install Hugging Face Hub client
         run: python -m pip install --upgrade pip huggingface_hub
 
-      - name: Upload repo contents to Hugging Face Space
+      - name: Upload app files to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_SPACE: rishikeshkalita/ashenglish-reels
@@ -42,24 +43,31 @@ jobs:
 
           token = os.environ['HF_TOKEN']
           repo_id = os.environ['HF_SPACE']
-
           api = HfApi(token=token)
-          api.upload_folder(
-              folder_path='.',
-              repo_id=repo_id,
-              repo_type='space',
-              commit_message='Sync from GitHub Actions',
-              ignore_patterns=[
-                  '.git/*',
-                  '.github/*',
-                  '.venv/*',
-                  'ffmpeg/*',
-                  '__pycache__/*',
-                  '*.pyc',
-                  '*.pyo',
-                  '*.pyd',
-                  '*.log'
-              ],
-          )
+
+          files_to_upload = [
+              'README.md',
+              'app.py',
+              'requirements.txt',
+              'Dockerfile',
+              'packages.txt',
+              'runtime.txt',
+              '.dockerignore',
+              'assamese_dictionary.txt',
+              'corrections.json',
+              '.streamlit/config.toml',
+          ]
+
+          for local_path in files_to_upload:
+              path_in_repo = local_path.replace('\\', '/')
+              print(f'Uploading {local_path} -> {path_in_repo}')
+              api.upload_file(
+                  path_or_fileobj=local_path,
+                  path_in_repo=path_in_repo,
+                  repo_id=repo_id,
+                  repo_type='space',
+                  commit_message=f'Sync {path_in_repo} from GitHub Actions',
+              )
+
           print(f'Synced repository to https://huggingface.co/spaces/{repo_id}')
           PY
