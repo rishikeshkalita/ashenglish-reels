@@ -1,0 +1,11 @@
+.venv
+__pycache__
+ffmpeg
+*.pyc
+*.pyo
+*.pyd
+.Python
+build
+dist
+.git
+.gitignore

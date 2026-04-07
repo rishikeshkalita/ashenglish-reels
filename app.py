@@ -28,6 +28,9 @@ MAX_WORDS_PER_LINE = 4
 MIN_WORDS_PER_LINE = 2
 MAX_GAP_SECONDS = 0.55
 MAX_UPLOAD_MB = 200
+LOW_CONFIDENCE_THRESHOLD = 0.55
+DICTIONARY_PATH = Path(__file__).with_name("assamese_dictionary.txt")
+CORRECTIONS_PATH = Path(__file__).with_name("corrections.json")
 
 
 @dataclass
@@ -44,6 +47,7 @@ class SubtitleLine:
     assamese_text: str
     romanized_text: str
     confidence: float
+    review_status: str
     edited_text: str = ""
 
 
@@ -119,11 +123,77 @@ def parse_corrections(raw_text: str) -> dict[str, str]:
     return corrections
 
 
+def parse_dictionary_text(raw_text: str) -> set[str]:
+    return {
+        normalize_assamese_text(line)
+        for line in raw_text.splitlines()
+        if normalize_assamese_text(line)
+    }
+
+
+def load_dictionary_words() -> set[str]:
+    if not DICTIONARY_PATH.exists():
+        return set()
+    return parse_dictionary_text(DICTIONARY_PATH.read_text(encoding="utf-8"))
+
+
+def load_correction_rules_file() -> dict[str, str]:
+    if not CORRECTIONS_PATH.exists():
+        return {}
+    try:
+        data = json.loads(CORRECTIONS_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    corrections: dict[str, str] = {}
+    for wrong, right in data.items():
+        wrong_clean = normalize_assamese_text(str(wrong))
+        right_clean = normalize_assamese_text(str(right))
+        if wrong_clean and right_clean:
+            corrections[wrong_clean] = right_clean
+    return corrections
+
+
+def load_uploaded_dictionary(uploaded_file) -> set[str]:
+    if uploaded_file is None:
+        return set()
+    return parse_dictionary_text(uploaded_file.getvalue().decode("utf-8", errors="ignore"))
+
+
+def load_uploaded_corrections(uploaded_file) -> dict[str, str]:
+    if uploaded_file is None:
+        return {}
+    try:
+        data = json.loads(uploaded_file.getvalue().decode("utf-8", errors="ignore"))
+    except json.JSONDecodeError:
+        return {}
+    corrections: dict[str, str] = {}
+    for wrong, right in data.items():
+        wrong_clean = normalize_assamese_text(str(wrong))
+        right_clean = normalize_assamese_text(str(right))
+        if wrong_clean and right_clean:
+            corrections[wrong_clean] = right_clean
+    return corrections
+
+
 def apply_strict_corrections(text: str, corrections: dict[str, str]) -> str:
     corrected = normalize_assamese_text(text)
     for wrong, right in sorted(corrections.items(), key=lambda item: len(item[0]), reverse=True):
         corrected = corrected.replace(wrong, right)
     return corrected
+
+
+def dictionary_match_ratio(text: str, dictionary_words: set[str]) -> float:
+    words = [normalize_assamese_text(word) for word in text.split() if normalize_assamese_text(word)]
+    if not words:
+        return 0.0
+    matched = sum(1 for word in words if word in dictionary_words)
+    return matched / len(words)
+
+
+def finalize_review_status(confidence: float, dictionary_ratio: float) -> str:
+    if confidence < LOW_CONFIDENCE_THRESHOLD or dictionary_ratio < 0.5:
+        return "Review needed"
+    return "Looks good"
 
 
 def assamese_validity_score(text: str) -> float:
@@ -223,7 +293,12 @@ def group_word_cues(words: list[WordCue]) -> list[list[WordCue]]:
     return lines
 
 
-def build_subtitle_lines(audio_path: Path, vocab_hints: list[str], corrections: dict[str, str]) -> list[SubtitleLine]:
+def build_subtitle_lines(
+    audio_path: Path,
+    vocab_hints: list[str],
+    corrections: dict[str, str],
+    dictionary_words: set[str],
+) -> list[SubtitleLine]:
     word_cues = transcribe_audio(audio_path, vocab_hints, corrections)
     if not word_cues:
         return []
@@ -232,6 +307,7 @@ def build_subtitle_lines(audio_path: Path, vocab_hints: list[str], corrections: 
     for grouped_words in group_word_cues(word_cues):
         assamese_text = normalize_assamese_text(" ".join(word.text for word in grouped_words))
         confidence = max(0.1, min(0.99, assamese_validity_score(assamese_text)))
+        dictionary_ratio = dictionary_match_ratio(assamese_text, dictionary_words)
         romanized_text = romanize_assamese_text(assamese_text)
         subtitles.append(
             SubtitleLine(
@@ -240,6 +316,7 @@ def build_subtitle_lines(audio_path: Path, vocab_hints: list[str], corrections: 
                 assamese_text=assamese_text,
                 romanized_text=romanized_text,
                 confidence=confidence,
+                review_status=finalize_review_status(confidence, dictionary_ratio),
                 edited_text=romanized_text,
             )
         )
@@ -334,6 +411,7 @@ def build_editor_dataframe(subtitles: list[SubtitleLine]) -> pd.DataFrame:
                 "Assamese": line.assamese_text,
                 "Roman Assamese": line.romanized_text,
                 "Confidence": f"{line.confidence:.2f}",
+                "Review": line.review_status,
                 "Final Subtitle": line.edited_text or line.romanized_text,
             }
             for line in subtitles
@@ -354,6 +432,7 @@ def restore_subtitles_from_editor(editor_df: pd.DataFrame) -> list[SubtitleLine]
                 assamese_text=assamese_text,
                 romanized_text=romanized_text,
                 confidence=float(row["Confidence"]),
+                review_status=str(row.get("Review", "Review needed")),
                 edited_text=final_text or romanized_text,
             )
         )
@@ -426,9 +505,14 @@ def render_editor_panel() -> pd.DataFrame | None:
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
-        disabled=["Start", "End", "Assamese", "Confidence"],
+        disabled=["Start", "End", "Assamese", "Confidence", "Review"],
     )
     st.session_state["draft_editor_df"] = edited_df
+    review_needed_count = int((edited_df["Review"] == "Review needed").sum()) if "Review" in edited_df else 0
+    if review_needed_count:
+        st.warning(f"{review_needed_count} subtitle lines are flagged for manual review.")
+    else:
+        st.success("All subtitle lines passed the current dictionary/confidence checks.")
     return edited_df
 
 
@@ -445,6 +529,16 @@ def main() -> None:
         margin_v = st.slider("Bottom margin", min_value=80, max_value=220, value=DEFAULT_MARGIN_V, step=10)
         st.caption(f"ASR model: `{WHISPER_MODEL_NAME}`")
         st.caption(f"Upload limit: `{MAX_UPLOAD_MB} MB`")
+        custom_dictionary_file = st.file_uploader(
+            "Optional custom dictionary",
+            type=["txt"],
+            help="Upload a larger Assamese dictionary text file to improve consistency for this session.",
+        )
+        custom_corrections_file = st.file_uploader(
+            "Optional corrections JSON",
+            type=["json"],
+            help="Upload exact correction mappings for this session.",
+        )
 
     vocab_hints_text = st.text_area("Assamese vocabulary hints", placeholder="One Assamese word or phrase per line")
     corrections_text = st.text_area("Strict correction rules", placeholder="wrong word => correct word")
@@ -462,14 +556,23 @@ def main() -> None:
             workspace = Path(tmp_dir)
             try:
                 vocab_hints = parse_vocab_hints(vocab_hints_text)
-                corrections = parse_corrections(corrections_text)
+                corrections = {
+                    **load_correction_rules_file(),
+                    **load_uploaded_corrections(custom_corrections_file),
+                    **parse_corrections(corrections_text),
+                }
+                dictionary_words = {
+                    *load_dictionary_words(),
+                    *load_uploaded_dictionary(custom_dictionary_file),
+                    *parse_dictionary_text(vocab_hints_text),
+                }
 
                 input_video = save_uploaded_video(uploaded_file, workspace)
                 audio_path = workspace / "preprocessed.wav"
                 with st.spinner("Extracting and preprocessing audio..."):
                     extract_and_preprocess_audio(input_video, audio_path)
                 with st.spinner(f"Transcribing Assamese speech with Whisper {WHISPER_MODEL_NAME}..."):
-                    subtitles = build_subtitle_lines(audio_path, vocab_hints, corrections)
+                    subtitles = build_subtitle_lines(audio_path, vocab_hints, corrections, dictionary_words)
 
                 if not subtitles:
                     st.error("No Assamese speech could be transcribed from this video.")

@@ -17,6 +17,10 @@ Streamlit app for Assamese reels subtitling with a strict Assamese-first pipelin
 - Roman Assamese is phonetic transliteration, not translation
 - Exact corrections are only applied from user-provided rules
 - If the model is uncertain, the editable review step is where you fix subtitle text before burn-in
+- The app now also uses:
+  - `assamese_dictionary.txt` for known Assamese words
+  - `corrections.json` for exact saved replacement rules
+  - optional uploaded `.txt` and `.json` files for session-specific vocabulary and corrections
 
 ## Models
 
@@ -126,10 +130,31 @@ Files to upload:
 1. Upload the Assamese video.
 2. Add Assamese vocabulary hints if needed.
 3. Add optional exact correction rules in the form `wrong => correct`.
-4. Click `Generate Assamese Draft`.
-5. Review Assamese text and Roman Assamese output.
-6. Edit the `Final Subtitle` column if anything is wrong.
-7. Click `Render Edited Reel`.
+4. Optionally upload a larger dictionary `.txt` file and corrections `.json` file for the current session.
+5. Click `Generate Assamese Draft`.
+6. Review Assamese text and Roman Assamese output.
+7. Check the `Review` column for lines flagged as `Review needed`.
+8. Edit the `Final Subtitle` column if anything is wrong.
+9. Grow `assamese_dictionary.txt` and `corrections.json` over time to improve consistency.
+10. Click `Render Edited Reel`.
+
+## Controlled Accuracy Files
+
+### `assamese_dictionary.txt`
+
+Store one trusted Assamese word or phrase per line.
+
+### `corrections.json`
+
+Store saved exact replacements:
+
+```json
+{
+  "wrong_word": "correct_word"
+}
+```
+
+These two files are your long-term consistency layer and should grow with your content.
 
 ## Notes
 
